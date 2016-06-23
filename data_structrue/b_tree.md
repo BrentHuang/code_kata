@@ -1,7 +1,6 @@
 <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=default"></script>
 
-$$x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}$$
-\\(x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}\\)
+$$ x = \dfrac{-b \pm \sqrt{b^2 - 4ac}}{2a} $$
 
 B-树是一种平衡的多路查找树,它在文件系统中很有用.
 定义: 一棵m阶的B-树,或者为空树,或为满足下列特性的m叉树:
