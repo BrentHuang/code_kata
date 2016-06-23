@@ -1,4 +1,4 @@
-<script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=default"></script>
+<script type="text/javascript" src="http://cdn.bootcss.com/mathjax/2.6.1/MathJax.js?config=default"></script>
 
 $$ x = \dfrac{-b \pm \sqrt{b^2 - 4ac}}{2a} $$
 
