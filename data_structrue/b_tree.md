@@ -1,4 +1,4 @@
-<script type="text/javascript" src="//cdn.bootcss.com/mathjax/2.6.1/MathJax.js?config=default"></script>
+<script type="text/javascript" src="http://cdn.bootcss.com/mathjax/2.6.1/MathJax.js?config=default"></script>
 
 $$x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}$$
 \\(x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}\\)
