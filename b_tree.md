@@ -39,3 +39,5 @@ $$ \alpha + \beta $$
 ![](http://www.forkosh.com/mathtex.cgi? \lceil{m/2}\rceil)
 
 ![](http://latex.codecogs.com/gif.latex?\lceil{m/2}\rceil)
+
+$$ x^i_2 $$
