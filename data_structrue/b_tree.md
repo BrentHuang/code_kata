@@ -1,8 +1,4 @@
-<script type="text/javascript" src="http://cdn.bootcss.com/mathjax/2.6.1/MathJax.js?config=default"></script>
-
-$$ x = \dfrac{-b \pm \sqrt{b^2 - 4ac}}{2a} $$
-
-B-树是一种平衡的多路查找树,它在文件系统中很有用.
+B-树是一种平衡的多路查找树,适用于组织文件的索引.
 定义: 一棵m阶的B-树,或者为空树,或为满足下列特性的m叉树:
 - 树中每个结点至多有m棵子树;
 - 若根结点不是叶子结点，则至少有两棵子树;
