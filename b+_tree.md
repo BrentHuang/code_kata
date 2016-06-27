@@ -10,12 +10,11 @@ B+树是B-树的一种变体。
 - 在B+树上通常有两个头指针，一个指向根结点，另一个指向关键字最小的树叶。
 
 下图为一棵3阶的B+树：
+![](E:\code_kata\b+_tree.jpg)
 
-![](E:\code_kata\b++_tree.jpg)
 
-
-![](E:\code_kata\b++_tree2.jpg)
-
+注意：B+树的非叶结点中没有指向数据的指针，如下图所示：
+![](E:\code_kata\b+_tree2.jpg)
 
 
 
