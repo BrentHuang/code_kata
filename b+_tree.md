@@ -13,6 +13,7 @@ B+树是B-树的一种变体。
 
 ![](E:\code_kata\b++_tree.jpg)
 
+
 ![](E:\code_kata\b++_tree2.jpg)
 
 
