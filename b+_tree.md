@@ -11,9 +11,9 @@ B+树是B-树的一种变体。
 
 下图为一棵3阶的B+树：
 
-![](https://github.com/BrentHuang/code_kata/blob/master/data_structrue/b++_tree.jpg)
+![](E:\code_kata/b++_tree.jpg
 
-![](https://github.com/BrentHuang/code_kata/blob/master/data_structrue/b++_tree2.jpg)
+![](E:\code_kata/b++_tree2.jpg
 
 
 
