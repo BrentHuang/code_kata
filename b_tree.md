@@ -3,7 +3,7 @@
 B-树是一种平衡的多路查找树，适用于组织文件的索引。
 
 定义：一棵m（m>2)阶的B-树，或者为空树，或者为满足下列特性的m叉树：
-- 根结点至少有2棵子树，至多有m棵子树；
+- 非叶结点的根结点至少有2棵子树，至多有m棵子树；
 - 除根结点外，每个分支结点至少有<img src="http://www.forkosh.com/mathtex.cgi? \lceil{m/2}\rceil">棵子树，至多有m棵子树；
 - 每个非树叶节点中至少有<img src="http://www.forkosh.com/mathtex.cgi? \lceil{m/2}\rceil - 1 ">个关键字，至多有<img src="http://www.forkosh.com/mathtex.cgi? m - 1 ">个关键字；
 - 每个非树叶结点包含以下信息：
