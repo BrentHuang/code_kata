@@ -5,7 +5,8 @@ typedef struct
 } Record;
 
 typedef int KeyType ;  
-#define m 5                   
+#define m 100
+
 typedef struct Node{  
     int keynum;               
     struct Node *parent;       
