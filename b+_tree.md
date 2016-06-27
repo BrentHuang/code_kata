@@ -7,6 +7,9 @@ B+树是B-树的一种变体。
 - **叶子结点中增加了一个指针,将所有树叶节点按关键字从小到大顺序链接起来；*
 
 
+- 非叶结点的根结点至少有2棵子树，至多有m棵子树；
+- 除根结点外，每个分支结点至少有<img src="http://www.forkosh.com/mathtex.cgi? \lceil{m/2}\rceil">棵子树，至多有m棵子树；
+- 
 每个叶子结点中的关键字个数的范围为  - <img src="http://www.forkosh.com/mathtex.cgi? n (\lceil{m/2}\rceil - 1 \le n \le m - 1)">；
 
 
