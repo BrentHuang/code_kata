@@ -8,7 +8,7 @@
    Demonstration program for a B-tree on disk. After
    building the B-tree by entering integers on the
    keyboard or by supplying them as a text file, we can
-   insert and delete items via the keyboard. We can also
+   Insert and delete items via the keyboard. We can also
    search the B-tree for a given item. Each time, the tree
    or a search path is displayed. In contrast to program
    btree, program disktree writes, reads and updates nodes
@@ -31,63 +31,63 @@ using namespace std;
 
 #define M 5  // Order of B-tree: M link fields in each node
 
-enum status
+enum Status
 {
-    InsertNotComplete,
-    Success,
-    DuplicateKey,
-    Underflow,
-    NotFound
+    INSERT_NOT_COMPLETE,
+    SUCCESS,
+    DUPLICATE_KEY,
+    UNDERFLOW,
+    NOT_FOUND
 };
 
-typedef int dtype;
+typedef int KeyType;
 
-struct node
+struct Node
 {
-    int n;        // Number of items stored in a node (n < M)
-    dtype k[M - 1]; // Data items (only the first n in use)
+    int n;        // Number of items stored in a Node (n < M)
+    KeyType k[M - 1]; // Data items (only the first n in use)
     long p[M];    // 'Pointers' to other nodes (n+1 in use)
 };
 
 // Logical order:
 //    p[0], k[0], p[1], k[1], ..., p[n-1], k[n-1], p[n]
 
-class Btree
+class BTree
 {
 public:
-    Btree(const char* TreeFileName);
-    ~Btree();
-    void insert(dtype x);
+    BTree(const char* TreeFileName);
+    ~BTree();
+    void Insert(KeyType x);
     void insert(const char* InpFileName);
 
     void print()
     {
         cout << "Contents:\n";
-        pr(root, 0);
+        pr(root_, 0);
     }
 
-    void DelNode(dtype x);
-    void ShowSearch(dtype x);
+    void Delete(KeyType x);
+    void ShowSearch(KeyType x);
 private:
     enum
     {
         NIL = -1
     };
-    long root, FreeList;
-    node RootNode;
+    long root_, FreeList;
+    Node RootNode;
     fstream file;
-    status ins(long r, dtype x, dtype& y, long& u);
+    Status ins(long r, KeyType x, KeyType& y, long& u);
     void pr(long r, int nSpace);
-    int NodeSearch(dtype x, const dtype* a, int n) const;
-    status del(long r, dtype x);
-    void ReadNode(long r, node& Node);
-    void WriteNode(long r, const node& Node);
+    int SearchInNode(KeyType x, const KeyType* k, int n) const;
+    Status del(long r, KeyType x);
+    void ReadNode(long r, Node& Node);
+    void WriteNode(long r, const Node& Node);
     void ReadStart();
     long GetNode();
     void FreeNode(long r);
 };
 
-Btree::Btree(const char* TreeFileName)
+BTree::BTree(const char* TreeFileName)
 {
     ifstream test(TreeFileName, ios::in);
     // Remove  "| ios::nocreate" if your compiler does not accept it.
@@ -100,7 +100,7 @@ Btree::Btree(const char* TreeFileName)
                                 ios::trunc | ios::binary);
         // ios::binary required with MSDOS, but possibly
         // not accepted with other environments.
-        root = FreeList = NIL;
+        root_ = FreeList = NIL;
         long start[2] = { NIL, NIL };
         file.write((char*) start, 2 * sizeof(long));
     } else
@@ -117,23 +117,23 @@ Btree::Btree(const char* TreeFileName)
             cout << "Wrong file format.\n";
             exit(1);
         }
-        root = start[0];
+        root_ = start[0];
         FreeList = start[1];
         RootNode.n = 0;   // Signal for function ReadNode
-        ReadNode(root, RootNode);
+        ReadNode(root_, RootNode);
         print();
     }
 }
 
-Btree::~Btree()
+BTree::~BTree()
 {
     long start[2];
     file.seekp(0L, ios::beg);
-    start[0] = root;
+    start[0] = root_;
     start[1] = FreeList;
     file.write((char*) start, 2 * sizeof(long));
     // The remaining code of this destructor is slightly
-    // different from that in the first print of the book.
+    // different from that in the first Print of the book.
     // The length of the final binary file, including the
     // signature byte at the end, will now always be an odd
     // number, as it should be. There is a similar change in
@@ -152,26 +152,26 @@ Btree::~Btree()
     file.close();
 }
 
-void Btree::insert(dtype x)
+void BTree::Insert(KeyType x)
 {
     long pNew;
-    dtype xNew;
-    status code = ins(root, x, xNew, pNew);
-    if (code == DuplicateKey)
+    KeyType xNew;
+    Status code = ins(root_, x, xNew, pNew);
+    if (code == DUPLICATE_KEY)
         cout << "Duplicate key ignored.\n";
-    if (code == InsertNotComplete)
+    if (code == INSERT_NOT_COMPLETE)
     {
-        long root0 = root;
-        root = GetNode();
+        long root0 = root_;
+        root_ = GetNode();
         RootNode.n = 1;
         RootNode.k[0] = xNew;
         RootNode.p[0] = root0;
         RootNode.p[1] = pNew;
-        WriteNode(root, RootNode);
+        WriteNode(root_, RootNode);
     }
 }
 
-void Btree::insert(const char* InpFileName)
+void BTree::insert(const char* InpFileName)
 {
     ifstream InpFile(InpFileName, ios::in);
     if (InpFile.fail())
@@ -180,39 +180,39 @@ void Btree::insert(const char* InpFileName)
         << endl;
         return;
     }
-    dtype x;
-    while (InpFile >> x) insert(x);
+    KeyType x;
+    while (InpFile >> x) Insert(x);
     InpFile.clear();
     InpFile.close();
 }
 
-status Btree::ins(long r, dtype x, dtype& y, long& q)
+Status BTree::ins(long r, KeyType x, KeyType& y, long& q)
 {  // Insert x in *this. If not completely successful, the
     // integer y and the pointer q remain to be inserted.
     // Return value:
-    //    Success, DuplicateKey or InsertNotComplete.
+    //    SUCCESS, DUPLICATE_KEY or INSERT_NOT_COMPLETE.
     long pNew, pFinal;
     int i, j, n;
-    dtype xNew, kFinal;
-    status code;
+    KeyType xNew, kFinal;
+    Status code;
     if (r == NIL)
     {
         q = NIL;
         y = x;
-        return InsertNotComplete;
+        return INSERT_NOT_COMPLETE;
     }
-    node Node, NewNode;
+    Node Node, NewNode;
     ReadNode(r, Node);
     n = Node.n;
-    i = NodeSearch(x, Node.k, n);
-    if (i < n && x == Node.k[i]) return DuplicateKey;
+    i = SearchInNode(x, Node.k, n);
+    if (i < n && x == Node.k[i]) return DUPLICATE_KEY;
     code = ins(Node.p[i], x, xNew, pNew);
-    if (code != InsertNotComplete) return code;
+    if (code != INSERT_NOT_COMPLETE) return code;
     // Insertion in subtree did not completely succeed;
-    // try to insert xNew and pNew in the current node:
+    // try to Insert xNew and pNew in the current Node:
     if (n < M - 1)
     {
-        i = NodeSearch(xNew, Node.k, n);
+        i = SearchInNode(xNew, Node.k, n);
         for (j = n; j > i; j--)
         {
             Node.k[j] = Node.k[j - 1];
@@ -222,13 +222,13 @@ status Btree::ins(long r, dtype x, dtype& y, long& q)
         Node.p[i + 1] = pNew;
         ++Node.n;
         WriteNode(r, Node);
-        return Success;
+        return SUCCESS;
     }
-    // Current node is full (n == M - 1) and will be split.
+    // Current Node is full (n == M - 1) and will be split.
     // Pass item k[h] in the middle of the augmented
     // sequence back via parameter y, so that it
     // can move upward in the tree. Also, pass a pointer
-    // to the newly created node back via parameter q:
+    // to the newly created Node back via parameter q:
     if (i == M - 1)
     {
         kFinal = xNew;
@@ -263,16 +263,16 @@ status Btree::ins(long r, dtype x, dtype& y, long& q)
     NewNode.p[NewNode.n] = pFinal;
     WriteNode(r, Node);
     WriteNode(q, NewNode);
-    return InsertNotComplete;
+    return INSERT_NOT_COMPLETE;
 }
 
-void Btree::pr(long r, int nSpace)
+void BTree::pr(long r, int nSpace)
 {
     if (r != NIL)
     {
         int i;
         cout << setw(nSpace) << "";
-        node Node;
+        Node Node;
         ReadNode(r, Node);
         for (i = 0; i < Node.n; i++) cout << Node.k[i] << " ";
         cout << endl;
@@ -280,7 +280,7 @@ void Btree::pr(long r, int nSpace)
     }
 }
 
-int Btree::NodeSearch(dtype x, const dtype* a, int n) const
+int BTree::SearchInNode(KeyType x, const KeyType* a, int n) const
 {
     int middle, left = 0, right = n - 1;
     if (x <= a[left]) return 0;
@@ -293,23 +293,23 @@ int Btree::NodeSearch(dtype x, const dtype* a, int n) const
     return right;
 }
 
-void Btree::ShowSearch(dtype x)
+void BTree::ShowSearch(KeyType x)
 {
     cout << "Search path:\n";
     int i, j, n;
-    long r = root;
-    node Node;
+    long r = root_;
+    Node Node;
     while (r != NIL)
     {
         ReadNode(r, Node);
         n = Node.n;
         for (j = 0; j < Node.n; j++) cout << " " << Node.k[j];
         cout << endl;
-        i = NodeSearch(x, Node.k, n);
+        i = SearchInNode(x, Node.k, n);
         if (i < n && x == Node.k[i])
         {
             cout << "Key " << x << " found in position " << i
-            << " of last displayed node.\n";
+            << " of last displayed Node.\n";
             return;
         }
         r = Node.p[i];
@@ -317,37 +317,37 @@ void Btree::ShowSearch(dtype x)
     cout << "Key " << x << " not found.\n";
 }
 
-void Btree::DelNode(dtype x)
+void BTree::Delete(KeyType x)
 {
     long root0;
-    switch (del(root, x))
+    switch (del(root_, x))
     {
-        case NotFound:
+        case NOT_FOUND:
             cout << x << " not found.\n";
             break;
-        case Underflow:
-            root0 = root;
-            root = RootNode.p[0];
+        case UNDERFLOW:
+            root0 = root_;
+            root_ = RootNode.p[0];
             FreeNode(root0);
-            if (root != NIL) ReadNode(root, RootNode);
+            if (root_ != NIL) ReadNode(root_, RootNode);
             break;
     }
 }
 
-status Btree::del(long r, dtype x)
+Status BTree::del(long r, KeyType x)
 {
-    if (r == NIL) return NotFound;
-    node Node;
+    if (r == NIL) return NOT_FOUND;
+    Node Node;
     ReadNode(r, Node);
     int i, j, pivot, n = Node.n;
-    dtype* k = Node.k;  // k[i] means Node.k[i]
+    KeyType* k = Node.k;  // k[i] means Node.k[i]
     const int nMin = (M - 1) / 2;
-    status code;
+    Status code;
     long* p = Node.p, pL, pR;       // p[i] means Node.p[i]
-    i = NodeSearch(x, k, n);
+    i = SearchInNode(x, k, n);
     if (p[0] == NIL)  // Are we dealing with a leaf?
     {
-        if (i == n || x < k[i]) return NotFound;
+        if (i == n || x < k[i]) return NOT_FOUND;
         // x == k[i]
         for (j = i + 1; j < n; j++)
         {
@@ -356,17 +356,17 @@ status Btree::del(long r, dtype x)
         }
         Node.n--;
         WriteNode(r, Node);
-        return Node.n >= (r == root ? 1 : nMin) ?
-               Success : Underflow;
+        return Node.n >= (r == root_ ? 1 : nMin) ?
+               SUCCESS : UNDERFLOW;
     }
-    // *r is an interior node, not a leaf:
+    // *r is an interior Node, not a leaf:
     if (i < n && x == k[i])
-    {  // x found in an interior node. Go to left child
+    {  // x found in an interior Node. Go to left child
         // and follow a path all the way to a leaf,
         // using rightmost branches:
         long q = p[i], q1;
         int nq;
-        node Node1;
+        Node Node1;
         for (; ;)
         {
             ReadNode(q, Node1);
@@ -381,12 +381,12 @@ status Btree::del(long r, dtype x)
         WriteNode(r, Node);
         WriteNode(q, Node1);
     }
-    // Delete x in leaf of subtree with root p[i]:
+    // Delete x in leaf of subtree with root_ p[i]:
     code = del(p[i], x);
-    if (code != Underflow) return code;
+    if (code != UNDERFLOW) return code;
     // There is underflow; borrow, and, if necessary, merge:
-    // Too few data items in node *p[i]
-    node NodeL, NodeR;
+    // Too few data items in Node *p[i]
+    Node NodeL, NodeR;
     if (i > 0)
     {
         pivot = i - 1;
@@ -410,7 +410,7 @@ status Btree::del(long r, dtype x)
             WriteNode(pL, NodeL);
             WriteNode(pR, NodeR);
             WriteNode(r, Node);
-            return Success;
+            return SUCCESS;
         }
     }
     pivot = i;
@@ -437,7 +437,7 @@ status Btree::del(long r, dtype x)
             WriteNode(pL, NodeL);
             WriteNode(pR, NodeR);
             WriteNode(r, Node);
-            return Success;
+            return SUCCESS;
         }
     }
     // Merge; neither borrow left nor borrow right possible.
@@ -465,45 +465,45 @@ status Btree::del(long r, dtype x)
     WriteNode(pL, NodeL);
     WriteNode(r, Node);
     return
-            Node.n >= (r == root ? 1 : nMin) ? Success : Underflow;
+            Node.n >= (r == root_ ? 1 : nMin) ? SUCCESS : UNDERFLOW;
 }
 
-void Btree::ReadNode(long r, node& Node)
+void BTree::ReadNode(long r, Node& Node)
 {
     if (r == NIL) return;
-    if (r == root && RootNode.n > 0) Node = RootNode; else
+    if (r == root_ && RootNode.n > 0) Node = RootNode; else
     {
         file.seekg(r, ios::beg);
-        file.read((char*) &Node, sizeof(node));
+        file.read((char*) &Node, sizeof(Node));
     }
 }
 
-void Btree::WriteNode(long r, const node& Node)
+void BTree::WriteNode(long r, const Node& Node)
 {
-    if (r == root) RootNode = Node;
+    if (r == root_) RootNode = Node;
     file.seekp(r, ios::beg);
-    file.write((char*) &Node, sizeof(node));
+    file.write((char*) &Node, sizeof(Node));
 }
 
-void Btree::ReadStart()
+void BTree::ReadStart()
 {
     long start[2];
     file.seekg(0L, ios::beg);
     file.read((char*) start, 2 * sizeof(long));
-    root = start[0];
+    root_ = start[0];
     FreeList = start[1];
-    ReadNode(root, RootNode);
+    ReadNode(root_, RootNode);
 }
 
-long Btree::GetNode()  // Modified (see also the destructor ~Btree)
+long BTree::GetNode()  // Modified (see also the destructor BTree)
 {
     long r;
-    node Node;
+    Node Node;
     if (FreeList == NIL)
     {
         file.seekp(0L, ios::end); // Allocate space on disk; if
         r = file.tellp() & ~1;    // file length is an odd number,
-        WriteNode(r, Node);       // the new node will overwrite
+        WriteNode(r, Node);       // the new Node will overwrite
     } else                      // signature byte at end of file
     {
         r = FreeList;
@@ -514,9 +514,9 @@ long Btree::GetNode()  // Modified (see also the destructor ~Btree)
 }
 
 
-void Btree::FreeNode(long r)
+void BTree::FreeNode(long r)
 {
-    node Node;
+    Node Node;
     ReadNode(r, Node);
     Node.p[0] = FreeList;
     FreeList = r;
@@ -528,26 +528,26 @@ int main()
     cout <<
     "Demonstration program for a B-tree on disk. The\n"
             "structure of the B-tree is shown by indentation.\n"
-            "For each node, the number of links to other nodes\n"
+            "For each Node, the number of links to other nodes\n"
             "will not be greater than " << M <<
     ", the order M of the B-tree.\n" <<
     "The B-tree representation is similar to the\n"
             "table of contents of a book. The items stored in\n"
-            "each node are displayed on a single line.\n\n";
+            "each Node are displayed on a single line.\n\n";
     char TreeFileName[50];
     cout <<
     "Enter name of (possibly nonexistent) BINARY file for\n"
             "the B-tree: ";
     cin >> setw(50) >> TreeFileName;
-    Btree t(TreeFileName);
+    BTree t(TreeFileName);
     cout <<
     "\nEnter a (possibly empty) sequence of integers,\n"
             "followed by a slash (/):\n";
-    dtype x;
+    KeyType x;
     char ch = 0;
     while (cin >> x, !cin.fail())
     {
-        t.insert(x);
+        t.Insert(x);
         ch = 1;
     }
     if (ch) t.print();
@@ -578,10 +578,10 @@ int main()
                 t.ShowSearch(x);
                 break;
             case 'I':
-                t.insert(x);
+                t.Insert(x);
                 break;
             case 'D':
-                t.DelNode(x);
+                t.Delete(x);
                 break;
             default:
                 cout << "Invalid command, use S, I or D\n";

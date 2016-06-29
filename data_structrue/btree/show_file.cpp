@@ -12,7 +12,7 @@
 
 using namespace std;
 
-typedef int dtype;
+typedef int KeyType;
 #define M 5  // Order of B-tree: M link fields in each node
 
 int main()
@@ -32,8 +32,8 @@ int main()
     long start[2], pos;
     struct node
     {
-        int n;    // Number of items stored in a node (n < M)
-        dtype k[M - 1]; // Data items (only the first n in use)
+        int n;    // Number of items stored in a Node (n < M)
+        KeyType k[M - 1]; // Data items (only the first n in use)
         long p[M];    // 'Pointers' to other nodes (n+1 in use)
     } Node;
     file.seekg(-1L, ios::end);
@@ -46,7 +46,7 @@ int main()
     }
     file.seekg(0L, ios::beg);
     file.read((char*) start, 2 * sizeof(long));
-    cout << "root: " << start[0] <<
+    cout << "root_: " << start[0] <<
     "     Freelist: " << start[1] << endl;
     for (; ;)
     {
