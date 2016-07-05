@@ -7,29 +7,30 @@
 /* disktree:
    Demonstration program for a B-tree on disk. After
    building the B-tree by entering integers on the
-   keyboard or by supplying them as a text file, we can
+   keyboard or by supplying them as a text fs_, we can
    Insert and delete items via the keyboard. We can also
    search the B-tree for a given item. Each time, the tree
    or a search path is displayed. In contrast to program
    btree, program disktree writes, reads and updates nodes
-   on disk, using a binary file. The name of this file is
+   on disk, using a binary fs_. The name of this fs_ is
    to be entered on the keyboard. If a B-tree with that
-   name exists, that B-tree is used; otherwise such a file
+   name exists, that B-tree is used; otherwise such a fs_
    is created.
    Caution:
-      Do not confuse the (binary) file for the B-tree with
+      Do not confuse the (binary) fs_ for the B-tree with
       the optional textfile for input data. Use different
-      file-name extensions, such as .bin and .txt.
+      fs_-name extensions, such as .bin and .txt.
 */
+// 将Ｂ-树按node存储在一个二进制文件中，用hexdump -C tree.bin分析
+// 最终这个二进制文件的长度为奇数，如果为偶数则在结尾写一个字节（内容为sizeof(int)）
 #include <iostream>
 #include <fstream>
 #include <iomanip>
 #include <stdlib.h>
-#include <ctype.h>
 
 using namespace std;
 
-#define M 5  // Order of B-tree: M link fields in each node
+const int M = 1000;  // Order of B-tree: M link fields in each Node
 
 enum Status
 {
@@ -45,550 +46,734 @@ typedef int KeyType;
 struct Node
 {
     int n;        // Number of items stored in a Node (n < M)
-    KeyType k[M - 1]; // Data items (only the first n in use)
-    long p[M];    // 'Pointers' to other nodes (n+1 in use)
+    KeyType k[M - 1]; // Data items (only the first n in use) k[0]~k[n-1]有效
+    long p[M];    // 'Pointers' to other nodes (n+1 in use)　p[0]~p[n]有效
 };
 
 // Logical order:
 //    p[0], k[0], p[1], k[1], ..., p[n-1], k[n-1], p[n]
 
-class BTree
+class DiskBTree
 {
 public:
-    BTree(const char* TreeFileName);
-    ~BTree();
-    void Insert(KeyType x);
-    void insert(const char* InpFileName);
+    DiskBTree(const char* tree_file_path);
+    ~DiskBTree();
 
-    void print()
+    void Print()
     {
-        cout << "Contents:\n";
-        pr(root_, 0);
+        cout << "Contents:" << endl;
+        PrintNode(root_, 0);
     }
 
-    void Delete(KeyType x);
     void ShowSearch(KeyType x);
+
+    int Insert(KeyType x);
+    int Insert(const char* key_file_path);
+
+    int Delete(KeyType x);
+
+private:
+    void PrintNode(long r, int indent_space_count);
+    int SearchInNode(KeyType x, const KeyType* k, int n) const;
+    Status Ins(long r, KeyType x, KeyType& y, long& u);
+    Status Del(long r, KeyType x);
+    void ReadNode(long r, Node& node);
+    void WriteNode(long r, const Node& node);
+    long GetNode();
+    void FreeNode(long r);
+    void ReadStart();
+
 private:
     enum
     {
         NIL = -1
     };
-    long root_, FreeList;
-    Node RootNode;
-    fstream file;
-    Status ins(long r, KeyType x, KeyType& y, long& u);
-    void pr(long r, int nSpace);
-    int SearchInNode(KeyType x, const KeyType* k, int n) const;
-    Status del(long r, KeyType x);
-    void ReadNode(long r, Node& Node);
-    void WriteNode(long r, const Node& Node);
-    void ReadStart();
-    long GetNode();
-    void FreeNode(long r);
+
+    long root_, free_list_;
+    Node root_node_;
+    fstream fs_;
 };
 
-BTree::BTree(const char* TreeFileName)
+DiskBTree::DiskBTree(const char* tree_file_path)
 {
-    ifstream test(TreeFileName, ios::in);
-    // Remove  "| ios::nocreate" if your compiler does not accept it.
-    int NewFile = test.fail();
-    test.clear();
-    test.close();
-    if (NewFile)
+    ifstream ifs(tree_file_path, ios::in); // Remove  "| ios::nocreate" if your compiler does not accept it.
+    bool new_file = ifs.fail();
+    ifs.clear();
+    ifs.close();
+
+    if (new_file)
     {
-        file.open(TreeFileName, ios::out | ios::in |
-                                ios::trunc | ios::binary);
+        // 文件不存在，新建一个
+        fs_.open(tree_file_path, ios::out | ios::in | ios::trunc | ios::binary);
         // ios::binary required with MSDOS, but possibly
         // not accepted with other environments.
-        root_ = FreeList = NIL;
+        root_ = free_list_ = NIL;
         long start[2] = { NIL, NIL };
-        file.write((char*) start, 2 * sizeof(long));
-    } else
+        fs_.write((char*) start, 2 * sizeof(long));
+    }
+    else
     {
         long start[2];
-        file.open(TreeFileName, ios::out | ios::in | ios::binary); // See above note.
-        file.seekg(-1L, ios::end);
+        fs_.open(tree_file_path, ios::out | ios::in | ios::binary); // See above note.
+        fs_.seekg(-1L, ios::end);
         char ch;
-        file.read(&ch, 1); // Read signature.
-        file.seekg(0L, ios::beg);
-        file.read((char*) start, 2 * sizeof(long));
+        fs_.read(&ch, 1); // Read signature.
+        fs_.seekg(0L, ios::beg);
+        fs_.read((char*) start, 2 * sizeof(long));
         if (ch != sizeof(int))
         {
-            cout << "Wrong file format.\n";
+            cout << "Wrong file format." << endl;
             exit(1);
         }
+
         root_ = start[0];
-        FreeList = start[1];
-        RootNode.n = 0;   // Signal for function ReadNode
-        ReadNode(root_, RootNode);
-        print();
+        free_list_ = start[1];
+        root_node_.n = 0;   // Signal for function ReadNode
+        ReadNode(root_, root_node_);
+        Print();
     }
 }
 
-BTree::~BTree()
+DiskBTree::~DiskBTree()
 {
     long start[2];
-    file.seekp(0L, ios::beg);
+    fs_.seekp(0L, ios::beg);
     start[0] = root_;
-    start[1] = FreeList;
-    file.write((char*) start, 2 * sizeof(long));
+    start[1] = free_list_;
+    fs_.write((char*) start, 2 * sizeof(long));
+
     // The remaining code of this destructor is slightly
-    // different from that in the first Print of the book.
+    // different from that in the first print of the book.
     // The length of the final binary file, including the
     // signature byte at the end, will now always be an odd
-    // number, as it should be. There is a similar change in
-    // the function GetNode.I am grateful to Chian Wiz from
+    // number（奇数）, as it should be. There is a similar change in
+    // the function GetNode. I am grateful to Chian Wiz from
     // Singapore, who showed me the possibility of a 'file leak',
     // that is, an unused byte, which sometimes caused problems
     // with the program 'showfile', when this was applied to
     // this binary file. Such problems should no longer occur.
     // L. A.
     char ch = sizeof(int); // Signature
-    file.seekg(0L, ios::end);
-    if ((file.tellg() & 1) == 0)
-        file.write(&ch, 1);
-    // If the current file length is an even number, a
+
+    fs_.seekg(0L, ios::end);
+    if ((fs_.tellg() & 1) == 0)
+    {
+        fs_.write(&ch, 1);
+    }
+
+    // If the current file length is an even number（偶数）, a
     // signature is added; otherwise it is already there.
-    file.close();
+    fs_.close();
 }
 
-void BTree::Insert(KeyType x)
+void DiskBTree::ShowSearch(KeyType x)
 {
-    long pNew;
-    KeyType xNew;
-    Status code = ins(root_, x, xNew, pNew);
-    if (code == DUPLICATE_KEY)
-        cout << "Duplicate key ignored.\n";
-    if (code == INSERT_NOT_COMPLETE)
-    {
-        long root0 = root_;
-        root_ = GetNode();
-        RootNode.n = 1;
-        RootNode.k[0] = xNew;
-        RootNode.p[0] = root0;
-        RootNode.p[1] = pNew;
-        WriteNode(root_, RootNode);
-    }
-}
-
-void BTree::insert(const char* InpFileName)
-{
-    ifstream InpFile(InpFileName, ios::in);
-    if (InpFile.fail())
-    {
-        cout << "Cannot open input file " << InpFileName
-        << endl;
-        return;
-    }
-    KeyType x;
-    while (InpFile >> x) Insert(x);
-    InpFile.clear();
-    InpFile.close();
-}
-
-Status BTree::ins(long r, KeyType x, KeyType& y, long& q)
-{  // Insert x in *this. If not completely successful, the
-    // integer y and the pointer q remain to be inserted.
-    // Return value:
-    //    SUCCESS, DUPLICATE_KEY or INSERT_NOT_COMPLETE.
-    long pNew, pFinal;
+    cout << "Search path:" << endl;
     int i, j, n;
-    KeyType xNew, kFinal;
-    Status code;
-    if (r == NIL)
+    long r = root_;
+    Node node;
+
+    while (r != NIL)
     {
-        q = NIL;
-        y = x;
-        return INSERT_NOT_COMPLETE;
-    }
-    Node Node, NewNode;
-    ReadNode(r, Node);
-    n = Node.n;
-    i = SearchInNode(x, Node.k, n);
-    if (i < n && x == Node.k[i]) return DUPLICATE_KEY;
-    code = ins(Node.p[i], x, xNew, pNew);
-    if (code != INSERT_NOT_COMPLETE) return code;
-    // Insertion in subtree did not completely succeed;
-    // try to Insert xNew and pNew in the current Node:
-    if (n < M - 1)
-    {
-        i = SearchInNode(xNew, Node.k, n);
-        for (j = n; j > i; j--)
+        ReadNode(r, node);
+        n = node.n;
+
+        for (j = 0; j < node.n; ++j)
         {
-            Node.k[j] = Node.k[j - 1];
-            Node.p[j + 1] = Node.p[j];
+            cout << " " << node.k[j];
         }
-        Node.k[i] = xNew;
-        Node.p[i + 1] = pNew;
-        ++Node.n;
-        WriteNode(r, Node);
-        return SUCCESS;
-    }
-    // Current Node is full (n == M - 1) and will be split.
-    // Pass item k[h] in the middle of the augmented
-    // sequence back via parameter y, so that it
-    // can move upward in the tree. Also, pass a pointer
-    // to the newly created Node back via parameter q:
-    if (i == M - 1)
-    {
-        kFinal = xNew;
-        pFinal = pNew;
-    } else
-    {
-        kFinal = Node.k[M - 2];
-        pFinal = Node.p[M - 1];
-        for (j = M - 2; j > i; j--)
+
+        cout << endl;
+
+        i = SearchInNode(x, node.k, n);
+        if (i < n && x == node.k[i])
         {
-            Node.k[j] = Node.k[j - 1];
-            Node.p[j + 1] = Node.p[j];
+            cout << "Key " << x << " found in position " << i << " of last displayed node.";
+            return;
         }
-        Node.k[i] = xNew;
-        Node.p[i + 1] = pNew;
+
+        r = node.p[i];
     }
-    int h = (M - 1) / 2;
-    y = Node.k[h];           // y and q are passed on to the
-    q = GetNode();           // next higher level in the tree
-    // The values p[0],k[0],p[1],...,k[h-1],p[h] belong to
-    // the left of k[h] and are kept in *r:
-    Node.n = h;
-    // p[h+1],k[h+1],p[h+2],...,k[M-2],p[M-1],kFinal,pFinal
-    // belong to the right of k[h] and are moved to *q:
-    NewNode.n = M - 1 - h;
-    for (j = 0; j < NewNode.n; j++)
-    {
-        NewNode.p[j] = Node.p[j + h + 1];
-        NewNode.k[j] =
-                (j < NewNode.n - 1 ? Node.k[j + h + 1] : kFinal);
-    }
-    NewNode.p[NewNode.n] = pFinal;
-    WriteNode(r, Node);
-    WriteNode(q, NewNode);
-    return INSERT_NOT_COMPLETE;
+
+    cout << "Key " << x << " not found." << endl;
 }
 
-void BTree::pr(long r, int nSpace)
+int DiskBTree::Insert(KeyType x)
+{
+    int ret = 0;
+    KeyType y;
+    long q = NIL;
+
+    Status code = Ins(root_, x, y, q);
+    switch (code)
+    {
+        case DUPLICATE_KEY:
+        {
+            cout << "Duplicate key ignored." << endl;
+            ret = -1;
+        }
+            break;
+
+        case INSERT_NOT_COMPLETE:
+        {
+            long root = root_;
+            root_ = GetNode();
+            root_node_.n = 1;
+            root_node_.k[0] = y;
+            root_node_.p[0] = root;
+            root_node_.p[1] = q;
+            WriteNode(root_, root_node_);
+        }
+            break;
+
+        default:
+        {
+            ret = -1;
+        }
+            break;
+    }
+
+    return ret;
+}
+
+int DiskBTree::Insert(const char* key_file_path)
+{
+    ifstream ifs(key_file_path, ios::in);
+    if (ifs.fail())
+    {
+        cout << "Cannot open input file " << key_file_path << endl;
+        return -1;
+    }
+
+    KeyType x;
+
+    while (ifs >> x)
+    {
+        Insert(x);
+    }
+
+    ifs.clear();
+    ifs.close();
+
+    return 0;
+}
+
+int DiskBTree::Delete(KeyType x)
+{
+    int ret = 0;
+
+    Status code = Del(root_, x);
+    switch (code)
+    {
+        case NOT_FOUND:
+        {
+            cout << "Key " << x << " not found." << endl;
+            ret = -1;
+        }
+            break;
+
+        case UNDERFLOW:
+        {
+            long root = root_;
+            root_ = root_node_.p[0];
+            FreeNode(root);
+
+            if (root_ != NIL)
+            {
+                ReadNode(root_, root_node_);
+            }
+        }
+            break;
+    }
+
+    return ret;
+}
+
+void DiskBTree::PrintNode(long r, int indent_space_count)
 {
     if (r != NIL)
     {
         int i;
-        cout << setw(nSpace) << "";
+        cout << setw(indent_space_count) << "";
+
         Node Node;
         ReadNode(r, Node);
-        for (i = 0; i < Node.n; i++) cout << Node.k[i] << " ";
+
+        for (i = 0; i < Node.n; ++i)
+        {
+            cout << Node.k[i] << " ";
+        }
+
         cout << endl;
-        for (i = 0; i <= Node.n; i++) pr(Node.p[i], nSpace + 8);
+
+        for (i = 0; i <= Node.n; ++i)
+        {
+            PrintNode(Node.p[i], indent_space_count + 8);
+        }
     }
 }
 
-int BTree::SearchInNode(KeyType x, const KeyType* a, int n) const
+int DiskBTree::SearchInNode(KeyType x, const KeyType* k, int n) const
 {
     int middle, left = 0, right = n - 1;
-    if (x <= a[left]) return 0;
-    if (x > a[right]) return n;
+    if (x <= k[left])
+    {
+        return 0;
+    }
+
+    if (x > k[right])
+    {
+        return n;
+    }
+
+    // 二分查找
     while (right - left > 1)
     {
         middle = (right + left) / 2;
-        (x <= a[middle] ? right : left) = middle;
+        (x <= k[middle] ? right : left) = middle;
     }
+
     return right;
 }
 
-void BTree::ShowSearch(KeyType x)
-{
-    cout << "Search path:\n";
+Status DiskBTree::Ins(long r, KeyType x, KeyType& y, long& q)
+{  // Insert x in *this. If not completely successful, the
+    // integer y and the pointer q remain to be inserted.
+    // Return value:
+    //    SUCCESS, DUPLICATE_KEY or INSERT_NOT_COMPLETE.
+    if (NIL == r)
+    {
+        y = x;
+        q = NIL;
+        return INSERT_NOT_COMPLETE;
+    }
+
+    KeyType y1;
+    long q1;
+
+    KeyType final_x;
+    long final_q;
+
     int i, j, n;
-    long r = root_;
-    Node Node;
-    while (r != NIL)
-    {
-        ReadNode(r, Node);
-        n = Node.n;
-        for (j = 0; j < Node.n; j++) cout << " " << Node.k[j];
-        cout << endl;
-        i = SearchInNode(x, Node.k, n);
-        if (i < n && x == Node.k[i])
-        {
-            cout << "Key " << x << " found in position " << i
-            << " of last displayed Node.\n";
-            return;
-        }
-        r = Node.p[i];
-    }
-    cout << "Key " << x << " not found.\n";
-}
-
-void BTree::Delete(KeyType x)
-{
-    long root0;
-    switch (del(root_, x))
-    {
-        case NOT_FOUND:
-            cout << x << " not found.\n";
-            break;
-        case UNDERFLOW:
-            root0 = root_;
-            root_ = RootNode.p[0];
-            FreeNode(root0);
-            if (root_ != NIL) ReadNode(root_, RootNode);
-            break;
-    }
-}
-
-Status BTree::del(long r, KeyType x)
-{
-    if (r == NIL) return NOT_FOUND;
-    Node Node;
-    ReadNode(r, Node);
-    int i, j, pivot, n = Node.n;
-    KeyType* k = Node.k;  // k[i] means Node.k[i]
-    const int nMin = (M - 1) / 2;
     Status code;
-    long* p = Node.p, pL, pR;       // p[i] means Node.p[i]
-    i = SearchInNode(x, k, n);
-    if (p[0] == NIL)  // Are we dealing with a leaf?
+
+    Node node, new_node;
+
+    ReadNode(r, node);
+    n = node.n;
+
+    i = SearchInNode(x, node.k, n);
+    if (i < n && x == node.k[i])
     {
-        if (i == n || x < k[i]) return NOT_FOUND;
+        return DUPLICATE_KEY;
+    }
+
+    code = Ins(node.p[i], x, y1, q1);
+    if (code != INSERT_NOT_COMPLETE)
+    {
+        return code;
+    }
+
+    // Insertion in subtree did not completely succeed;
+    // try to Insert y1 and q1 in the current node:
+    if (n < M - 1)
+    {
+        i = SearchInNode(y1, node.k, n);
+
+        for (j = n; j > i; --j)
+        {
+            node.k[j] = node.k[j - 1];
+            node.p[j + 1] = node.p[j];
+        }
+
+        node.k[i] = y1;
+        node.p[i + 1] = q1;
+        ++(node.n);
+        WriteNode(r, node);
+
+        return SUCCESS;
+    }
+
+    // Current node is full (n == M - 1) and will be split.
+    // Pass item k[h] in the middle of the augmented
+    // sequence back via parameter y, so that it
+    // can move upward in the tree. Also, pass a pointer
+    // to the newly created node back via parameter q:
+    if (i == M - 1)
+    {
+        final_x = y1;
+        final_q = q1;
+    }
+    else
+    {
+        final_x = node.k[M - 2];
+        final_q = node.p[M - 1];
+
+        for (j = M - 2; j > i; --j)
+        {
+            node.k[j] = node.k[j - 1];
+            node.p[j + 1] = node.p[j];
+        }
+
+        node.k[i] = y1;
+        node.p[i + 1] = q1;
+    }
+
+    int h = (M - 1) / 2;
+    y = node.k[h];           // y and q are passed on to the
+    q = GetNode();           // next higher level in the tree
+
+    // The values p[0],k[0],p[1],...,k[h-1],p[h] belong to
+    // the left of k[h] and are kept in *r:
+    node.n = h;
+
+    // p[h+1],k[h+1],p[h+2],...,k[M-2],p[M-1],final_x,final_q
+    // belong to the right of k[h] and are moved to *q:
+    new_node.n = M - 1 - h;
+
+    for (j = 0; j < new_node.n; ++j)
+    {
+        new_node.p[j] = node.p[j + h + 1];
+        new_node.k[j] = ((j < new_node.n - 1) ? node.k[j + h + 1] : final_x);
+    }
+
+    new_node.p[new_node.n] = final_q;
+    WriteNode(r, node);
+    WriteNode(q, new_node);
+
+    return INSERT_NOT_COMPLETE;
+}
+
+Status DiskBTree::Del(long r, KeyType x)
+{
+    if (NIL == r)
+    {
+        return NOT_FOUND;
+    }
+
+    Node node;
+    ReadNode(r, node);
+
+    KeyType* k = node.k;  // k[i] means node.k[i]
+    long* p = node.p;
+    long pL = NIL;
+    long pR = NIL;       // p[i] means node.p[i]
+    int i, j, pivot, n = node.n;
+    const int N_MIN = (M - 1) / 2;
+    Status code;
+
+    i = SearchInNode(x, k, n);
+    if (NIL == p[0])  // Are we dealing with a leaf?
+    {
+        if (i == n || x < k[i])
+        {
+            return NOT_FOUND;
+        }
+
         // x == k[i]
-        for (j = i + 1; j < n; j++)
+        for (j = i + 1; j < n; ++j)
         {
             k[j - 1] = k[j];
             p[j] = p[j + 1];
         }
-        Node.n--;
-        WriteNode(r, Node);
-        return Node.n >= (r == root_ ? 1 : nMin) ?
-               SUCCESS : UNDERFLOW;
+
+        --node.n;
+        WriteNode(r, node);
+
+        return (node.n >= (r == root_ ? 1 : N_MIN)) ? SUCCESS : UNDERFLOW;
     }
-    // *r is an interior Node, not a leaf:
+
+    // *r is an interior node, not a leaf:
     if (i < n && x == k[i])
-    {  // x found in an interior Node. Go to left child
+    {  // x found in an interior node. Go to left child
         // and follow a path all the way to a leaf,
         // using rightmost branches:
         long q = p[i], q1;
         int nq;
-        Node Node1;
+        Node node1;
+
         for (; ;)
         {
-            ReadNode(q, Node1);
-            nq = Node1.n;
-            q1 = Node1.p[nq];
-            if (q1 == NIL) break;
+            ReadNode(q, node1);
+
+            nq = node1.n;
+            q1 = node1.p[nq];
+
+            if (NIL == q1)
+            {
+                break;
+            }
+
             q = q1;
         }
+
         // Exchange k[i] (= x) with rightmost item in leaf:
-        k[i] = Node1.k[nq - 1];
-        Node1.k[nq - 1] = x;
-        WriteNode(r, Node);
-        WriteNode(q, Node1);
+        k[i] = node1.k[nq - 1];
+        node1.k[nq - 1] = x;
+        WriteNode(r, node);
+        WriteNode(q, node1);
     }
+
     // Delete x in leaf of subtree with root_ p[i]:
-    code = del(p[i], x);
-    if (code != UNDERFLOW) return code;
+    code = Del(p[i], x);
+    if (code != UNDERFLOW)
+    {
+        return code;
+    }
+
     // There is underflow; borrow, and, if necessary, merge:
     // Too few data items in Node *p[i]
-    Node NodeL, NodeR;
+    Node nodeL, nodeR;
     if (i > 0)
     {
         pivot = i - 1;
         pL = p[pivot];
-        ReadNode(pL, NodeL);
-        if (NodeL.n > nMin) // Borrow from left sibling
+        ReadNode(pL, nodeL);
+
+        if (nodeL.n > N_MIN) // Borrow from left sibling
         {  // k[pivot] between pL and pR:
             pR = p[i];
             // Increase contents of *pR, borrowing from *pL:
-            ReadNode(pR, NodeR);
-            NodeR.p[NodeR.n + 1] = NodeR.p[NodeR.n];
-            for (j = NodeR.n; j > 0; j--)
+            ReadNode(pR, nodeR);
+            nodeR.p[nodeR.n + 1] = nodeR.p[nodeR.n];
+
+            for (j = nodeR.n; j > 0; --j)
             {
-                NodeR.k[j] = NodeR.k[j - 1];
-                NodeR.p[j] = NodeR.p[j - 1];
+                nodeR.k[j] = nodeR.k[j - 1];
+                nodeR.p[j] = nodeR.p[j - 1];
             }
-            NodeR.n++;
-            NodeR.k[0] = k[pivot];
-            NodeR.p[0] = NodeL.p[NodeL.n];
-            k[pivot] = NodeL.k[--NodeL.n];
-            WriteNode(pL, NodeL);
-            WriteNode(pR, NodeR);
-            WriteNode(r, Node);
+
+            ++(nodeR.n);
+            nodeR.k[0] = k[pivot];
+            nodeR.p[0] = nodeL.p[nodeL.n];
+            k[pivot] = nodeL.k[--nodeL.n];
+
+            WriteNode(pL, nodeL);
+            WriteNode(pR, nodeR);
+            WriteNode(r, node);
+
             return SUCCESS;
         }
     }
+
     pivot = i;
+
     if (i < n)
     {
         pR = p[pivot + 1];
-        ReadNode(pR, NodeR);
-        if (NodeR.n > nMin) // Borrow from right sibling
+        ReadNode(pR, nodeR);
+
+        if (nodeR.n > N_MIN) // Borrow from right sibling
         {  // k[pivot] between pL and pR:
             pL = p[pivot];
-            ReadNode(pL, NodeL);
+            ReadNode(pL, nodeL);
+
             // Increase contents of *pL, borrowing from *pR:
-            NodeL.k[NodeL.n] = k[pivot];
-            NodeL.p[NodeL.n + 1] = NodeR.p[0];
-            k[pivot] = NodeR.k[0];
-            NodeL.n++;
-            NodeR.n--;
-            for (j = 0; j < NodeR.n; j++)
+            nodeL.k[nodeL.n] = k[pivot];
+            nodeL.p[nodeL.n + 1] = nodeR.p[0];
+            k[pivot] = nodeR.k[0];
+            ++(nodeL.n);
+            --(nodeR.n);
+
+            for (j = 0; j < nodeR.n; ++j)
             {
-                NodeR.k[j] = NodeR.k[j + 1];
-                NodeR.p[j] = NodeR.p[j + 1];
+                nodeR.k[j] = nodeR.k[j + 1];
+                nodeR.p[j] = nodeR.p[j + 1];
             }
-            NodeR.p[NodeR.n] = NodeR.p[NodeR.n + 1];
-            WriteNode(pL, NodeL);
-            WriteNode(pR, NodeR);
-            WriteNode(r, Node);
+
+            nodeR.p[nodeR.n] = nodeR.p[nodeR.n + 1];
+            WriteNode(pL, nodeL);
+            WriteNode(pR, nodeR);
+            WriteNode(r, node);
+
             return SUCCESS;
         }
     }
+
     // Merge; neither borrow left nor borrow right possible.
-    pivot = (i == n ? i - 1 : i);
+    pivot = ((i == n) ? i - 1 : i);
     pL = p[pivot];
     pR = p[pivot + 1];
+
     // Add k[pivot] and *pR to *pL:
-    ReadNode(pL, NodeL);
-    ReadNode(pR, NodeR);
-    NodeL.k[NodeL.n] = k[pivot];
-    NodeL.p[NodeL.n + 1] = NodeR.p[0];
-    for (j = 0; j < NodeR.n; j++)
+    ReadNode(pL, nodeL);
+    ReadNode(pR, nodeR);
+    nodeL.k[nodeL.n] = k[pivot];
+    nodeL.p[nodeL.n + 1] = nodeR.p[0];
+
+    for (j = 0; j < nodeR.n; ++j)
     {
-        NodeL.k[NodeL.n + 1 + j] = NodeR.k[j];
-        NodeL.p[NodeL.n + 2 + j] = NodeR.p[j + 1];
+        nodeL.k[nodeL.n + 1 + j] = nodeR.k[j];
+        nodeL.p[nodeL.n + 2 + j] = nodeR.p[j + 1];
     }
-    NodeL.n += 1 + NodeR.n;
+
+    nodeL.n += 1 + nodeR.n;
     FreeNode(pR);
-    for (j = i + 1; j < n; j++)
+
+    for (j = i + 1; j < n; ++j)
     {
         k[j - 1] = k[j];
         p[j] = p[j + 1];
     }
-    Node.n--;
-    WriteNode(pL, NodeL);
-    WriteNode(r, Node);
-    return
-            Node.n >= (r == root_ ? 1 : nMin) ? SUCCESS : UNDERFLOW;
+
+    --(node.n);
+    WriteNode(pL, nodeL);
+    WriteNode(r, node);
+
+    return (node.n >= (r == root_ ? 1 : N_MIN)) ? SUCCESS : UNDERFLOW;
 }
 
-void BTree::ReadNode(long r, Node& Node)
+void DiskBTree::ReadNode(long r, Node& node)
 {
-    if (r == NIL) return;
-    if (r == root_ && RootNode.n > 0) Node = RootNode; else
+    if (NIL == r)
     {
-        file.seekg(r, ios::beg);
-        file.read((char*) &Node, sizeof(Node));
+        return;
+    }
+
+    if (r == root_ && root_node_.n > 0)
+    {
+        node = root_node_; // 根结点常驻内存
+    }
+    else
+    {
+        fs_.seekg(r, ios::beg); // 读文件时使用tellg()；写文件时使用tellp()。g代表get，p代表put
+        fs_.read((char*) &node, sizeof(node));
     }
 }
 
-void BTree::WriteNode(long r, const Node& Node)
+void DiskBTree::WriteNode(long r, const Node& node)
 {
-    if (r == root_) RootNode = Node;
-    file.seekp(r, ios::beg);
-    file.write((char*) &Node, sizeof(Node));
+    if (r == root_)
+    {
+        root_node_ = node;
+    }
+
+    fs_.seekp(r, ios::beg);
+    fs_.write((char*) &node, sizeof(node));
 }
 
-void BTree::ReadStart()
-{
-    long start[2];
-    file.seekg(0L, ios::beg);
-    file.read((char*) start, 2 * sizeof(long));
-    root_ = start[0];
-    FreeList = start[1];
-    ReadNode(root_, RootNode);
-}
-
-long BTree::GetNode()  // Modified (see also the destructor BTree)
+long DiskBTree::GetNode()  // Modified (see also the destructor DiskBTreeTree)
 {
     long r;
-    Node Node;
-    if (FreeList == NIL)
+    Node node;
+
+    if (NIL == free_list_)
     {
-        file.seekp(0L, ios::end); // Allocate space on disk; if
-        r = file.tellp() & ~1;    // file length is an odd number,
-        WriteNode(r, Node);       // the new Node will overwrite
-    } else                      // signature byte at end of file
-    {
-        r = FreeList;
-        ReadNode(r, Node);        // To update FreeList:
-        FreeList = Node.p[0];     // Reduce the free list by 1
+        // 增加一个node
+        fs_.seekp(0L, ios::end); // Allocate space on disk; if file length is an odd number, the new node will overwrite signature byte at end of file
+        r = fs_.tellp() & ~1; // 如果文件长度为偶数，则r就是文件长度；如果为奇数，则r往前移一个字节
+        WriteNode(r, node);
     }
+    else
+    {
+        // 取free_list的第一个元素
+        r = free_list_;
+        ReadNode(r, node);        // To update free_list:
+        free_list_ = node.p[0];     // Reduce the free list by 1
+    }
+
     return r;
 }
 
-
-void BTree::FreeNode(long r)
+void DiskBTree::FreeNode(long r)
 {
     Node Node;
     ReadNode(r, Node);
-    Node.p[0] = FreeList;
-    FreeList = r;
+    Node.p[0] = free_list_;
+    free_list_ = r;
     WriteNode(r, Node);
+}
+
+void DiskBTree::ReadStart()
+{
+    long start[2];
+    fs_.seekg(0L, ios::beg);
+    fs_.read((char*) start, 2 * sizeof(long));
+    root_ = start[0];
+    free_list_ = start[1];
+    ReadNode(root_, root_node_);
 }
 
 int main()
 {
-    cout <<
-    "Demonstration program for a B-tree on disk. The\n"
-            "structure of the B-tree is shown by indentation.\n"
-            "For each Node, the number of links to other nodes\n"
-            "will not be greater than " << M <<
-    ", the order M of the B-tree.\n" <<
-    "The B-tree representation is similar to the\n"
-            "table of contents of a book. The items stored in\n"
-            "each Node are displayed on a single line.\n\n";
-    char TreeFileName[50];
-    cout <<
-    "Enter name of (possibly nonexistent) BINARY file for\n"
-            "the B-tree: ";
-    cin >> setw(50) >> TreeFileName;
-    BTree t(TreeFileName);
-    cout <<
-    "\nEnter a (possibly empty) sequence of integers,\n"
-            "followed by a slash (/):\n";
+    cout << "sizeof(node): " << sizeof(Node) << endl;
+
+    cout << "Demonstration program for a B-tree on disk. The" << endl
+        << "structure of the B-tree is shown by indentation." << endl
+        << "For each node, the number of links to other nodes" << endl
+        << "will not be greater than " << M << ", the order M of the B-tree." << endl
+        << "The B-tree representation is similar to the" << endl
+        << "table of contents of a book. The items stored in" << endl
+        << "each Node are displayed on a single line." << endl << endl;
+
+    char tree_file_path[50];
+    cout << "Enter name of (possibly nonexistent) BINARY file path for" << endl
+            << "the B-tree: ";
+    cin >> setw(50) >> tree_file_path;
+
+    DiskBTree tree(tree_file_path);
+
+    cout << endl << "Enter a (possibly empty) sequence of integers," << endl << "followed by a slash (/):" << endl;
     KeyType x;
     char ch = 0;
+
     while (cin >> x, !cin.fail())
     {
-        t.Insert(x);
+        tree.Insert(x);
         ch = 1;
     }
-    if (ch) t.print();
+
+    if (ch)
+    {
+        tree.Print();
+    }
+
     cin.clear();
     cin >> ch; // Skip terminating character
-    cout << "\nDo you want data to be read from a text"
-            "file? (Y/N): ";
+    cout << endl << "Do you want data to be read from a text file? (Y/N): ";
     cin >> ch;
+
     if (toupper(ch) == 'Y')
     {
-        char InpFileName[50];
-        cout << "Name of this textfile: ";
-        cin >> setw(50) >> InpFileName;
-        t.insert(InpFileName);
-        t.print();
+        char key_file_path[50];
+        cout << "Name of this text file: ";
+        cin >> setw(50) >> key_file_path;
+        tree.Insert(key_file_path);
+//        tree.Print();
     }
+
     for (; ;)
     {
-        cout <<
-        "\nEnter an integer, followed by I, D, or S (for\n"
-                "Insert, Delete and Search), or enter Q to quit: ";
+        cout << endl << "Enter an integer, followed by I, D, or S (for" << endl
+            << "Insert, Delete and Search), or enter Q to quit: ";
         cin >> x >> ch;
-        if (cin.fail()) break;
-        ch = toupper(ch);
+        if (cin.fail())
+        {
+            break;
+        }
+
+        ch = (char) toupper(ch);
         switch (ch)
         {
             case 'S':
-                t.ShowSearch(x);
+                tree.ShowSearch(x);
                 break;
             case 'I':
-                t.Insert(x);
+                tree.Insert(x);
                 break;
             case 'D':
-                t.Delete(x);
+                tree.Delete(x);
                 break;
             default:
-                cout << "Invalid command, use S, I or D\n";
+                cout << "Invalid command, use S, I or D" << endl;
                 break;
         }
-        if (ch == 'I' || ch == 'D') t.print();
+
+        if (ch == 'I' || ch == 'D')
+        {
+            tree.Print();
+        }
     }
+
     return 0;
 }
-
